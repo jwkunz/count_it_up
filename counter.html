@@ -1,0 +1,763 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Count It Up!</title>
+  <style>
+    :root {
+      --bg: #0f1116;
+      --panel: #171a22;
+      --panel-2: #1f2430;
+      --text: #e8edf6;
+      --muted: #9aa6bd;
+      --accent: #67c1ff;
+      --accent-2: #89ffb8;
+      --danger: #ff6b7a;
+      --border: #2b3242;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: radial-gradient(circle at top, #181c27 0%, var(--bg) 60%);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 24px;
+    }
+
+    .app {
+      width: min(980px, 100%);
+      background: rgba(18, 21, 29, 0.92);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      display: grid;
+      gap: 16px;
+      backdrop-filter: blur(8px);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 1.35rem;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+    }
+
+    .subtle {
+      color: var(--muted);
+      font-size: 0.9rem;
+      margin-top: 2px;
+    }
+
+    #chart {
+      width: 100%;
+      height: 320px;
+      display: block;
+      border-radius: 8px;
+      background: linear-gradient(180deg, #151926, #111520);
+      border: 1px solid #273047;
+    }
+
+    .counter-wrap {
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+    }
+
+    .counter {
+      font-size: clamp(2rem, 8vw, 4rem);
+      font-weight: 700;
+      line-height: 1;
+      color: var(--accent-2);
+      text-shadow: 0 0 16px rgba(137, 255, 184, 0.15);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    button {
+      background: var(--panel-2);
+      border: 1px solid #3a465f;
+      color: var(--text);
+      padding: 10px 14px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      transition: background 0.12s ease, transform 0.06s ease;
+    }
+
+    button:hover {
+      background: #273149;
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    .primary { border-color: #2e85bd; }
+    .danger { border-color: #8f3f49; color: #ffb3bb; }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+    }
+
+    .log-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.92rem;
+    }
+
+    .log-table th,
+    .log-table td {
+      text-align: left;
+      padding: 7px 8px;
+      border-bottom: 1px solid #273047;
+    }
+
+    .log-table th {
+      color: var(--muted);
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+      background: var(--panel);
+    }
+
+    .log-list {
+      max-height: 220px;
+      overflow: auto;
+      border: 1px solid #283349;
+      border-radius: 8px;
+    }
+
+    .log-table tr.selected {
+      background: #24304a;
+    }
+
+    .status {
+      min-height: 1.2rem;
+      color: var(--muted);
+      font-size: 0.88rem;
+      text-align: center;
+    }
+
+    @media (max-width: 700px) {
+      #chart {
+        height: 260px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <header class="panel">
+      <h1>Count It Up!</h1>
+      <div class="subtle">Commit values with timestamps, track history, and view a cubic trend fit.</div>
+    </header>
+
+    <section class="panel">
+      <canvas id="chart" aria-label="Log history chart"></canvas>
+    </section>
+
+    <section class="panel counter-wrap">
+      <div class="subtle">Current counter</div>
+      <div id="counterValue" class="counter">0</div>
+      <div class="toolbar">
+        <button id="incrementBtn" class="primary">Increment</button>
+        <button id="decrementBtn">Decrement</button>
+        <button id="commitBtn" class="primary">Commit</button>
+        <button id="editBtn">Edit Entry</button>
+        <button id="deleteBtn" class="danger">Delete</button>
+      </div>
+      <div class="controls">
+        <button id="exportBtn">Export CSV</button>
+        <button id="importBtn">Import CSV</button>
+        <button id="resetCounterBtn">Reset Counter</button>
+        <button id="resetBtn" class="danger">Reset Log</button>
+      </div>
+      <input id="csvInput" type="file" accept=".csv,text/csv" style="display:none" />
+      <div id="status" class="status"></div>
+    </section>
+
+    <section class="panel">
+      <div class="subtle" style="margin-bottom:8px;">Commit log (click a row to select for delete)</div>
+      <div class="log-list">
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th>Timestamp</th>
+              <th>Value</th>
+            </tr>
+          </thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (function () {
+      const COOKIE_NAME = "count_it_up_log_v1";
+      const COOKIE_DAYS = 365;
+
+      const counterEl = document.getElementById("counterValue");
+      const logBody = document.getElementById("logBody");
+      const statusEl = document.getElementById("status");
+      const canvas = document.getElementById("chart");
+      const csvInput = document.getElementById("csvInput");
+
+      const state = {
+        currentCount: 0,
+        log: [],
+        selectedId: null,
+      };
+
+      function setStatus(text, isError) {
+        statusEl.textContent = text;
+        statusEl.style.color = isError ? "#ff9faa" : "#9aa6bd";
+      }
+
+      function updateCounter() {
+        counterEl.textContent = String(state.currentCount);
+      }
+
+      function makeId() {
+        if (window.crypto && crypto.randomUUID) {
+          return crypto.randomUUID();
+        }
+        return String(Date.now()) + "_" + Math.random().toString(36).slice(2, 9);
+      }
+
+      function getCookie(name) {
+        const prefix = name + "=";
+        const parts = document.cookie ? document.cookie.split("; ") : [];
+        for (const part of parts) {
+          if (part.startsWith(prefix)) {
+            return decodeURIComponent(part.slice(prefix.length));
+          }
+        }
+        return null;
+      }
+
+      function setCookie(name, value, days) {
+        const maxAge = days * 24 * 60 * 60;
+        document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/; samesite=lax`;
+      }
+
+      function deleteCookie(name) {
+        document.cookie = `${name}=; max-age=0; path=/; samesite=lax`;
+      }
+
+      function saveLog() {
+        try {
+          setCookie(COOKIE_NAME, JSON.stringify(state.log), COOKIE_DAYS);
+        } catch (error) {
+          setStatus("Could not save log to cookie (it may be too large).", true);
+        }
+      }
+
+      function loadLog() {
+        const raw = getCookie(COOKIE_NAME);
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            state.log = parsed
+              .filter((item) => item && typeof item.timestamp === "string" && Number.isFinite(item.value))
+              .map((item) => ({
+                id: item.id || makeId(),
+                timestamp: new Date(item.timestamp).toISOString(),
+                value: Number(item.value),
+              }));
+          }
+        } catch (error) {
+          setStatus("Saved cookie log is invalid and was ignored.", true);
+        }
+      }
+
+      function formatTimestamp(iso) {
+        const date = new Date(iso);
+        return date.toLocaleString();
+      }
+
+      function sortLog() {
+        state.log.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      }
+
+      function renderLog() {
+        sortLog();
+        logBody.innerHTML = "";
+
+        if (!state.log.length) {
+          const tr = document.createElement("tr");
+          const td = document.createElement("td");
+          td.colSpan = 2;
+          td.style.color = "#8f9ab0";
+          td.textContent = "No commits yet.";
+          tr.appendChild(td);
+          logBody.appendChild(tr);
+          return;
+        }
+
+        state.log.forEach((entry) => {
+          const tr = document.createElement("tr");
+          tr.dataset.id = entry.id;
+          if (entry.id === state.selectedId) {
+            tr.classList.add("selected");
+          }
+          tr.innerHTML = `<td>${formatTimestamp(entry.timestamp)}</td><td>${entry.value}</td>`;
+          tr.addEventListener("click", () => {
+            state.selectedId = entry.id;
+            renderLog();
+          });
+          logBody.appendChild(tr);
+        });
+      }
+
+      function commitCurrentCount() {
+        const entry = {
+          id: makeId(),
+          timestamp: new Date().toISOString(),
+          value: state.currentCount,
+        };
+        state.log.push(entry);
+        state.selectedId = entry.id;
+        state.currentCount = 0;
+        saveLog();
+        updateCounter();
+        renderLog();
+        drawChart();
+        setStatus(`Committed value ${entry.value}. Counter reset to 0.`, false);
+      }
+
+      function deleteSelectedOrLast() {
+        if (!state.log.length) {
+          setStatus("No log entry to delete.", true);
+          return;
+        }
+
+        let index = -1;
+        if (state.selectedId) {
+          index = state.log.findIndex((entry) => entry.id === state.selectedId);
+        }
+        if (index === -1) {
+          index = state.log.length - 1;
+        }
+
+        const [removed] = state.log.splice(index, 1);
+        state.selectedId = null;
+        saveLog();
+        renderLog();
+        drawChart();
+        setStatus(`Deleted entry ${formatTimestamp(removed.timestamp)} (${removed.value}).`, false);
+      }
+
+      function editSelectedEntry() {
+        if (!state.log.length) {
+          setStatus("No log entry to edit.", true);
+          return;
+        }
+
+        if (!state.selectedId) {
+          setStatus("Select a log entry first, then click Edit Entry.", true);
+          return;
+        }
+
+        const index = state.log.findIndex((entry) => entry.id === state.selectedId);
+        if (index === -1) {
+          setStatus("Selected entry was not found.", true);
+          return;
+        }
+
+        const existing = state.log[index];
+        const newValueRaw = prompt("Edit value:", String(existing.value));
+        if (newValueRaw === null) return;
+
+        const newTimestampRaw = prompt("Edit timestamp (ISO or date-time):", existing.timestamp);
+        if (newTimestampRaw === null) return;
+
+        const newValue = Number(newValueRaw.trim());
+        const newTimestamp = new Date(newTimestampRaw.trim());
+        if (!Number.isFinite(newValue)) {
+          setStatus("Invalid value entered.", true);
+          return;
+        }
+        if (Number.isNaN(newTimestamp.getTime())) {
+          setStatus("Invalid timestamp entered.", true);
+          return;
+        }
+
+        existing.value = newValue;
+        existing.timestamp = newTimestamp.toISOString();
+        saveLog();
+        renderLog();
+        drawChart();
+        setStatus(`Updated entry ${formatTimestamp(existing.timestamp)} (${existing.value}).`, false);
+      }
+
+      function exportCsv() {
+        const header = "timestamp,value";
+        const rows = state.log.map((entry) => `${entry.timestamp},${entry.value}`);
+        const csv = [header, ...rows].join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "count_it_up_log.csv";
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        setStatus("Exported CSV.", false);
+      }
+
+      function parseCsv(text) {
+        const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+        if (!lines.length) return [];
+
+        let start = 0;
+        const first = lines[0].toLowerCase().replace(/\s+/g, "");
+        if (first === "timestamp,value" || first === "time,value") {
+          start = 1;
+        }
+
+        const entries = [];
+        for (let i = start; i < lines.length; i++) {
+          const parts = lines[i].split(",");
+          if (parts.length < 2) {
+            throw new Error(`Invalid CSV row at line ${i + 1}`);
+          }
+
+          const timestamp = new Date(parts[0].trim());
+          const value = Number(parts[1].trim());
+
+          if (Number.isNaN(timestamp.getTime())) {
+            throw new Error(`Invalid timestamp at line ${i + 1}`);
+          }
+          if (!Number.isFinite(value)) {
+            throw new Error(`Invalid numeric value at line ${i + 1}`);
+          }
+
+          entries.push({
+            id: makeId(),
+            timestamp: timestamp.toISOString(),
+            value,
+          });
+        }
+
+        return entries;
+      }
+
+      function importCsvFromFile(file) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const text = String(reader.result || "");
+            const imported = parseCsv(text);
+            state.log = imported;
+            state.selectedId = null;
+            saveLog();
+            renderLog();
+            drawChart();
+            setStatus(`Imported ${imported.length} row(s) from CSV.`, false);
+          } catch (error) {
+            setStatus(error.message || "Failed to import CSV.", true);
+          }
+        };
+        reader.onerror = () => setStatus("Failed to read CSV file.", true);
+        reader.readAsText(file);
+      }
+
+      function resetLog() {
+        if (!confirm("Clear all logged entries and cookie cache?")) {
+          return;
+        }
+        state.log = [];
+        state.selectedId = null;
+        deleteCookie(COOKIE_NAME);
+        renderLog();
+        drawChart();
+        setStatus("Log cache reset.", false);
+      }
+
+      function buildOpenUniformKnotVector(controlPointCount, degree) {
+        const knotCount = controlPointCount + degree + 1;
+        const knots = new Array(knotCount).fill(0);
+        const interiorCount = knotCount - 2 * (degree + 1);
+        for (let i = 0; i < knotCount; i++) {
+          if (i <= degree) {
+            knots[i] = 0;
+          } else if (i >= knotCount - degree - 1) {
+            knots[i] = 1;
+          } else {
+            knots[i] = (i - degree) / (interiorCount + 1);
+          }
+        }
+        return knots;
+      }
+
+      function findKnotSpan(u, degree, knots, controlPointCount) {
+        if (u >= 1) {
+          return controlPointCount - 1;
+        }
+        let low = degree;
+        let high = controlPointCount;
+        let mid = Math.floor((low + high) / 2);
+        while (u < knots[mid] || u >= knots[mid + 1]) {
+          if (u < knots[mid]) {
+            high = mid;
+          } else {
+            low = mid;
+          }
+          mid = Math.floor((low + high) / 2);
+        }
+        return mid;
+      }
+
+      function evaluateBSplinePoint(u, degree, knots, controlPoints) {
+        const n = controlPoints.length;
+        const k = findKnotSpan(u, degree, knots, n);
+        const d = [];
+        for (let j = 0; j <= degree; j++) {
+          const cp = controlPoints[k - degree + j];
+          d.push({ x: cp.x, y: cp.y });
+        }
+
+        for (let r = 1; r <= degree; r++) {
+          for (let j = degree; j >= r; j--) {
+            const i = k - degree + j;
+            const denom = knots[i + degree + 1 - r] - knots[i];
+            const alpha = Math.abs(denom) < 1e-12 ? 0 : (u - knots[i]) / denom;
+            d[j].x = (1 - alpha) * d[j - 1].x + alpha * d[j].x;
+            d[j].y = (1 - alpha) * d[j - 1].y + alpha * d[j].y;
+          }
+        }
+
+        return d[degree];
+      }
+
+      function computeBSplineCurve(xs, ys, degree, sampleCount) {
+        if (xs.length < 2) {
+          return null;
+        }
+
+        const controlPoints = xs.map((x, i) => ({ x, y: ys[i] }));
+        while (controlPoints.length < degree + 1) {
+          controlPoints.unshift({ ...controlPoints[0] });
+          controlPoints.push({ ...controlPoints[controlPoints.length - 1] });
+        }
+
+        const knots = buildOpenUniformKnotVector(controlPoints.length, degree);
+        const points = [];
+        for (let i = 0; i <= sampleCount; i++) {
+          const u = i / sampleCount;
+          points.push(evaluateBSplinePoint(u, degree, knots, controlPoints));
+        }
+        return points;
+      }
+
+      function drawChart() {
+        const ctx = canvas.getContext("2d");
+        const rect = canvas.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = Math.max(320, Math.floor(rect.width * dpr));
+        canvas.height = Math.max(180, Math.floor(rect.height * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        const w = rect.width;
+        const h = rect.height;
+        const pad = { left: 62, right: 20, top: 18, bottom: 42 };
+        const plotW = Math.max(1, w - pad.left - pad.right);
+        const plotH = Math.max(1, h - pad.top - pad.bottom);
+
+        ctx.clearRect(0, 0, w, h);
+
+        ctx.fillStyle = "#111520";
+        ctx.fillRect(0, 0, w, h);
+
+        ctx.strokeStyle = "#2a3449";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 5; i++) {
+          const y = pad.top + (plotH * i) / 4;
+          ctx.beginPath();
+          ctx.moveTo(pad.left, y);
+          ctx.lineTo(w - pad.right, y);
+          ctx.stroke();
+        }
+
+        ctx.beginPath();
+        ctx.moveTo(pad.left, pad.top);
+        ctx.lineTo(pad.left, h - pad.bottom);
+        ctx.lineTo(w - pad.right, h - pad.bottom);
+        ctx.strokeStyle = "#546380";
+        ctx.stroke();
+
+        if (!state.log.length) {
+          ctx.fillStyle = "#8f9ab0";
+          ctx.font = "13px Segoe UI";
+          ctx.fillText("No committed data yet", pad.left + 10, pad.top + 20);
+          return;
+        }
+
+        const sorted = [...state.log].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const times = sorted.map((e) => new Date(e.timestamp).getTime());
+        const values = sorted.map((e) => e.value);
+
+        const t0 = Math.min(...times);
+        const xs = times.map((t) => (t - t0) / 86400000);
+        const minX = Math.min(...xs);
+        const maxX = Math.max(...xs);
+
+        const splineDegree = 3;
+        const splinePoints = computeBSplineCurve(xs, values, splineDegree, 180);
+
+        let minY = Math.min(...values);
+        let maxY = Math.max(...values);
+        if (splinePoints) {
+          for (const point of splinePoints) {
+            minY = Math.min(minY, point.y);
+            maxY = Math.max(maxY, point.y);
+          }
+        }
+        if (Math.abs(maxY - minY) < 1e-9) {
+          minY -= 1;
+          maxY += 1;
+        } else {
+          const padding = (maxY - minY) * 0.12;
+          minY -= padding;
+          maxY += padding;
+        }
+
+        function mapX(x) {
+          const range = maxX - minX || 1;
+          return pad.left + ((x - minX) / range) * plotW;
+        }
+
+        function mapY(y) {
+          return pad.top + ((maxY - y) / (maxY - minY)) * plotH;
+        }
+
+        ctx.fillStyle = "#b6c0d5";
+        ctx.font = "12px Segoe UI";
+        for (let i = 0; i < 5; i++) {
+          const val = minY + ((maxY - minY) * (4 - i)) / 4;
+          const y = pad.top + (plotH * i) / 4;
+          ctx.fillText(val.toFixed(1), 8, y + 4);
+        }
+
+        const tickCount = Math.min(6, sorted.length);
+        for (let i = 0; i < tickCount; i++) {
+          const idx = tickCount === 1 ? 0 : Math.round((i * (sorted.length - 1)) / (tickCount - 1));
+          const ts = new Date(sorted[idx].timestamp);
+          const x = mapX(xs[idx]);
+          const label = ts.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+          ctx.save();
+          ctx.translate(x, h - pad.bottom + 15);
+          ctx.rotate(-0.25);
+          ctx.fillStyle = "#9aa6bd";
+          ctx.fillText(label, 0, 0);
+          ctx.restore();
+        }
+
+        if (sorted.length > 1) {
+          ctx.strokeStyle = "#67c1ff";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          sorted.forEach((entry, i) => {
+            const x = mapX(xs[i]);
+            const y = mapY(entry.value);
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        }
+
+        ctx.fillStyle = "#89ffb8";
+        sorted.forEach((entry, i) => {
+          const x = mapX(xs[i]);
+          const y = mapY(entry.value);
+          ctx.beginPath();
+          ctx.arc(x, y, 3.2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+
+        if (splinePoints) {
+          ctx.strokeStyle = "#ffbd59";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([6, 5]);
+          ctx.beginPath();
+          splinePoints.forEach((point, i) => {
+            const px = mapX(point.x);
+            const py = mapY(point.y);
+            if (i === 0) ctx.moveTo(px, py);
+            else ctx.lineTo(px, py);
+          });
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        ctx.fillStyle = "#9aa6bd";
+        ctx.font = "12px Segoe UI";
+        ctx.fillText("Green: logged values | Orange dashed: cubic B-spline fit", pad.left, pad.top - 4);
+      }
+
+      document.getElementById("incrementBtn").addEventListener("click", () => {
+        state.currentCount += 1;
+        updateCounter();
+      });
+
+      document.getElementById("decrementBtn").addEventListener("click", () => {
+        state.currentCount -= 1;
+        updateCounter();
+      });
+
+      document.getElementById("commitBtn").addEventListener("click", commitCurrentCount);
+      document.getElementById("editBtn").addEventListener("click", editSelectedEntry);
+      document.getElementById("deleteBtn").addEventListener("click", deleteSelectedOrLast);
+      document.getElementById("exportBtn").addEventListener("click", exportCsv);
+      document.getElementById("importBtn").addEventListener("click", () => csvInput.click());
+      document.getElementById("resetCounterBtn").addEventListener("click", () => {
+        state.currentCount = 0;
+        updateCounter();
+        setStatus("Counter reset to 0.", false);
+      });
+      document.getElementById("resetBtn").addEventListener("click", resetLog);
+
+      csvInput.addEventListener("change", (event) => {
+        const file = event.target.files && event.target.files[0];
+        if (file) {
+          importCsvFromFile(file);
+        }
+        csvInput.value = "";
+      });
+
+      window.addEventListener("resize", drawChart);
+
+      loadLog();
+      updateCounter();
+      renderLog();
+      drawChart();
+    })();
+  </script>
+</body>
+</html>
