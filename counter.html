@@ -217,8 +217,11 @@
 
   <script>
     (function () {
-      const COOKIE_NAME = "count_it_up_log_v1";
-      const COOKIE_DAYS = 365;
+      const STORAGE_KEY = "count_it_up_log_v1";
+      const DB_NAME = "count_it_up_db";
+      const DB_VERSION = 1;
+      const STORE_NAME = "app_state";
+      const LEGACY_COOKIE_NAME = "count_it_up_log_v1";
 
       const counterEl = document.getElementById("counterValue");
       const logBody = document.getElementById("logBody");
@@ -230,6 +233,10 @@
         currentCount: 0,
         log: [],
         selectedId: null,
+      };
+      const storageState = {
+        backend: "localStorage",
+        db: null,
       };
 
       function setStatus(text, isError) {
@@ -259,39 +266,148 @@
         return null;
       }
 
-      function setCookie(name, value, days) {
-        const maxAge = days * 24 * 60 * 60;
-        document.cookie = `${name}=${encodeURIComponent(value)}; max-age=${maxAge}; path=/; samesite=lax`;
-      }
-
       function deleteCookie(name) {
         document.cookie = `${name}=; max-age=0; path=/; samesite=lax`;
       }
 
-      function saveLog() {
+      function openDatabase() {
+        return new Promise((resolve, reject) => {
+          if (!window.indexedDB) {
+            reject(new Error("IndexedDB is not available."));
+            return;
+          }
+          const request = indexedDB.open(DB_NAME, DB_VERSION);
+          request.onerror = () => reject(request.error || new Error("Failed to open IndexedDB."));
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+              db.createObjectStore(STORE_NAME);
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+        });
+      }
+
+      function idbGet(key) {
+        return new Promise((resolve, reject) => {
+          if (!storageState.db) {
+            reject(new Error("IndexedDB is not initialized."));
+            return;
+          }
+          const tx = storageState.db.transaction(STORE_NAME, "readonly");
+          const store = tx.objectStore(STORE_NAME);
+          const request = store.get(key);
+          request.onerror = () => reject(request.error || new Error("IndexedDB read failed."));
+          request.onsuccess = () => resolve(request.result || null);
+        });
+      }
+
+      function idbSet(key, value) {
+        return new Promise((resolve, reject) => {
+          if (!storageState.db) {
+            reject(new Error("IndexedDB is not initialized."));
+            return;
+          }
+          const tx = storageState.db.transaction(STORE_NAME, "readwrite");
+          const store = tx.objectStore(STORE_NAME);
+          const request = store.put(value, key);
+          request.onerror = () => reject(request.error || new Error("IndexedDB write failed."));
+          request.onsuccess = () => resolve();
+        });
+      }
+
+      function idbDelete(key) {
+        return new Promise((resolve, reject) => {
+          if (!storageState.db) {
+            reject(new Error("IndexedDB is not initialized."));
+            return;
+          }
+          const tx = storageState.db.transaction(STORE_NAME, "readwrite");
+          const store = tx.objectStore(STORE_NAME);
+          const request = store.delete(key);
+          request.onerror = () => reject(request.error || new Error("IndexedDB delete failed."));
+          request.onsuccess = () => resolve();
+        });
+      }
+
+      async function initStorage() {
         try {
-          setCookie(COOKIE_NAME, JSON.stringify(state.log), COOKIE_DAYS);
+          storageState.db = await openDatabase();
+          storageState.backend = "IndexedDB";
         } catch (error) {
-          setStatus("Could not save log to cookie (it may be too large).", true);
+          storageState.backend = "localStorage";
+          storageState.db = null;
+          setStatus("IndexedDB unavailable. Using localStorage fallback.", true);
         }
       }
 
-      function loadLog() {
-        const raw = getCookie(COOKIE_NAME);
+      async function readPersistedLogRaw() {
+        if (storageState.backend === "IndexedDB") {
+          return await idbGet(STORAGE_KEY);
+        }
+        return localStorage.getItem(STORAGE_KEY);
+      }
+
+      async function writePersistedLogRaw(raw) {
+        if (storageState.backend === "IndexedDB") {
+          await idbSet(STORAGE_KEY, raw);
+          return;
+        }
+        localStorage.setItem(STORAGE_KEY, raw);
+      }
+
+      async function clearPersistedLogRaw() {
+        if (storageState.backend === "IndexedDB") {
+          await idbDelete(STORAGE_KEY);
+          return;
+        }
+        localStorage.removeItem(STORAGE_KEY);
+      }
+
+      async function saveLog() {
+        const serialized = JSON.stringify(state.log);
+        await writePersistedLogRaw(serialized);
+      }
+
+      function persistLog() {
+        saveLog().catch(() => {
+          setStatus("Could not persist log data.", true);
+        });
+      }
+
+      function normalizeLogEntries(parsed) {
+        if (!Array.isArray(parsed)) return [];
+        return parsed
+          .filter((item) => item && typeof item.timestamp === "string" && Number.isFinite(item.value))
+          .map((item) => ({
+            id: item.id || makeId(),
+            timestamp: new Date(item.timestamp).toISOString(),
+            value: Number(item.value),
+          }));
+      }
+
+      async function loadLog() {
+        let raw = await readPersistedLogRaw();
+        if (!raw) {
+          const legacyCookie = getCookie(LEGACY_COOKIE_NAME);
+          if (legacyCookie) {
+            raw = legacyCookie;
+            try {
+              await writePersistedLogRaw(raw);
+              deleteCookie(LEGACY_COOKIE_NAME);
+              setStatus("Imported legacy cookie data into persistent storage.", false);
+            } catch (error) {
+              setStatus("Found legacy cookie data but could not migrate it.", true);
+            }
+          }
+        }
+
         if (!raw) return;
         try {
           const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed)) {
-            state.log = parsed
-              .filter((item) => item && typeof item.timestamp === "string" && Number.isFinite(item.value))
-              .map((item) => ({
-                id: item.id || makeId(),
-                timestamp: new Date(item.timestamp).toISOString(),
-                value: Number(item.value),
-              }));
-          }
+          state.log = normalizeLogEntries(parsed);
         } catch (error) {
-          setStatus("Saved cookie log is invalid and was ignored.", true);
+          setStatus("Saved log data is invalid and was ignored.", true);
         }
       }
 
@@ -343,7 +459,7 @@
         state.log.push(entry);
         state.selectedId = entry.id;
         state.currentCount = 0;
-        saveLog();
+        persistLog();
         updateCounter();
         renderLog();
         drawChart();
@@ -366,7 +482,7 @@
 
         const [removed] = state.log.splice(index, 1);
         state.selectedId = null;
-        saveLog();
+        persistLog();
         renderLog();
         drawChart();
         setStatus(`Deleted entry ${formatTimestamp(removed.timestamp)} (${removed.value}).`, false);
@@ -409,7 +525,7 @@
 
         existing.value = newValue;
         existing.timestamp = newTimestamp.toISOString();
-        saveLog();
+        persistLog();
         renderLog();
         drawChart();
         setStatus(`Updated entry ${formatTimestamp(existing.timestamp)} (${existing.value}).`, false);
@@ -476,7 +592,7 @@
             const imported = parseCsv(text);
             state.log = imported;
             state.selectedId = null;
-            saveLog();
+            persistLog();
             renderLog();
             drawChart();
             setStatus(`Imported ${imported.length} row(s) from CSV.`, false);
@@ -488,16 +604,22 @@
         reader.readAsText(file);
       }
 
-      function resetLog() {
-        if (!confirm("Clear all logged entries and cookie cache?")) {
+      async function resetLog() {
+        if (!confirm("Clear all logged entries in persistent storage?")) {
           return;
         }
         state.log = [];
         state.selectedId = null;
-        deleteCookie(COOKIE_NAME);
+        try {
+          await clearPersistedLogRaw();
+        } catch (error) {
+          setStatus("Failed to clear persisted log data.", true);
+          return;
+        }
+        deleteCookie(LEGACY_COOKIE_NAME);
         renderLog();
         drawChart();
-        setStatus("Log cache reset.", false);
+        setStatus("Persisted log reset.", false);
       }
 
       function buildOpenUniformKnotVector(controlPointCount, degree) {
@@ -753,10 +875,21 @@
 
       window.addEventListener("resize", drawChart);
 
-      loadLog();
-      updateCounter();
-      renderLog();
-      drawChart();
+      async function initializeApp() {
+        await initStorage();
+        await loadLog();
+        updateCounter();
+        renderLog();
+        drawChart();
+        setStatus(`Storage backend: ${storageState.backend}`, false);
+      }
+
+      initializeApp().catch(() => {
+        updateCounter();
+        renderLog();
+        drawChart();
+        setStatus("App initialization failed; showing in-memory state only.", true);
+      });
     })();
   </script>
 </body>
