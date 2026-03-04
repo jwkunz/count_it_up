@@ -356,22 +356,17 @@
         localStorage.setItem(STORAGE_KEY, raw);
       }
 
-      async function clearPersistedLogRaw() {
-        if (storageState.backend === "IndexedDB") {
-          await idbDelete(STORAGE_KEY);
-          return;
-        }
-        localStorage.removeItem(STORAGE_KEY);
-      }
-
-      async function saveLog() {
-        const serialized = JSON.stringify(state.log);
+      async function saveState() {
+        const serialized = JSON.stringify({
+          currentCount: state.currentCount,
+          log: state.log,
+        });
         await writePersistedLogRaw(serialized);
       }
 
-      function persistLog() {
-        saveLog().catch(() => {
-          setStatus("Could not persist log data.", true);
+      function persistState() {
+        saveState().catch(() => {
+          setStatus("Could not persist app state.", true);
         });
       }
 
@@ -386,7 +381,21 @@
           }));
       }
 
-      async function loadLog() {
+      function applyPersistedState(parsed) {
+        if (Array.isArray(parsed)) {
+          state.log = normalizeLogEntries(parsed);
+          return;
+        }
+        if (!parsed || typeof parsed !== "object") {
+          return;
+        }
+        if (Number.isFinite(parsed.currentCount)) {
+          state.currentCount = Number(parsed.currentCount);
+        }
+        state.log = normalizeLogEntries(parsed.log);
+      }
+
+      async function loadState() {
         let raw = await readPersistedLogRaw();
         if (!raw) {
           const legacyCookie = getCookie(LEGACY_COOKIE_NAME);
@@ -405,9 +414,9 @@
         if (!raw) return;
         try {
           const parsed = JSON.parse(raw);
-          state.log = normalizeLogEntries(parsed);
+          applyPersistedState(parsed);
         } catch (error) {
-          setStatus("Saved log data is invalid and was ignored.", true);
+          setStatus("Saved app state is invalid and was ignored.", true);
         }
       }
 
@@ -459,7 +468,7 @@
         state.log.push(entry);
         state.selectedId = entry.id;
         state.currentCount = 0;
-        persistLog();
+        persistState();
         updateCounter();
         renderLog();
         drawChart();
@@ -482,7 +491,7 @@
 
         const [removed] = state.log.splice(index, 1);
         state.selectedId = null;
-        persistLog();
+        persistState();
         renderLog();
         drawChart();
         setStatus(`Deleted entry ${formatTimestamp(removed.timestamp)} (${removed.value}).`, false);
@@ -525,7 +534,7 @@
 
         existing.value = newValue;
         existing.timestamp = newTimestamp.toISOString();
-        persistLog();
+        persistState();
         renderLog();
         drawChart();
         setStatus(`Updated entry ${formatTimestamp(existing.timestamp)} (${existing.value}).`, false);
@@ -592,7 +601,7 @@
             const imported = parseCsv(text);
             state.log = imported;
             state.selectedId = null;
-            persistLog();
+            persistState();
             renderLog();
             drawChart();
             setStatus(`Imported ${imported.length} row(s) from CSV.`, false);
@@ -611,7 +620,7 @@
         state.log = [];
         state.selectedId = null;
         try {
-          await clearPersistedLogRaw();
+          await saveState();
         } catch (error) {
           setStatus("Failed to clear persisted log data.", true);
           return;
@@ -846,11 +855,13 @@
       document.getElementById("incrementBtn").addEventListener("click", () => {
         state.currentCount += 1;
         updateCounter();
+        persistState();
       });
 
       document.getElementById("decrementBtn").addEventListener("click", () => {
         state.currentCount -= 1;
         updateCounter();
+        persistState();
       });
 
       document.getElementById("commitBtn").addEventListener("click", commitCurrentCount);
@@ -861,6 +872,7 @@
       document.getElementById("resetCounterBtn").addEventListener("click", () => {
         state.currentCount = 0;
         updateCounter();
+        persistState();
         setStatus("Counter reset to 0.", false);
       });
       document.getElementById("resetBtn").addEventListener("click", resetLog);
@@ -877,7 +889,7 @@
 
       async function initializeApp() {
         await initStorage();
-        await loadLog();
+        await loadState();
         updateCounter();
         renderLog();
         drawChart();
