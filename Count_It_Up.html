@@ -50,11 +50,32 @@
       padding: 12px;
     }
 
+    .panel h2 {
+      margin: 0 0 10px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+
     h1 {
       margin: 0;
       font-size: 1.35rem;
       font-weight: 600;
       letter-spacing: 0.3px;
+    }
+
+    .header-panel {
+      display: grid;
+      gap: 12px;
+      justify-items: center;
+      text-align: center;
+    }
+
+    .header-logo {
+      width: min(100%, 320px);
+      height: auto;
+      display: block;
+      filter: drop-shadow(0 10px 24px rgba(0, 0, 0, 0.3));
     }
 
     .subtle {
@@ -76,6 +97,19 @@
       display: grid;
       gap: 10px;
       justify-items: center;
+    }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .left-column,
+    .right-column {
+      display: grid;
+      gap: 16px;
     }
 
     .counter {
@@ -122,6 +156,15 @@
       justify-content: center;
     }
 
+    .logging-actions {
+      display: grid;
+      gap: 8px;
+    }
+
+    .status-panel {
+      padding-top: 0;
+    }
+
     .log-table {
       width: 100%;
       border-collapse: collapse;
@@ -162,6 +205,10 @@
     }
 
     @media (max-width: 700px) {
+      .dashboard {
+        grid-template-columns: 1fr;
+      }
+
       #chart {
         height: 260px;
       }
@@ -170,49 +217,76 @@
 </head>
 <body>
   <main class="app">
-    <header class="panel">
+    <header class="panel header-panel">
       <h1>Count It Up!</h1>
       <div class="subtle">Commit values with timestamps, track history, and view a cubic trend fit.</div>
+      <img class="header-logo" src="Count_It_Up.png" alt="Count It Up logo" />
     </header>
 
-    <section class="panel">
-      <canvas id="chart" aria-label="Log history chart"></canvas>
+    <section class="dashboard">
+      <div class="left-column">
+        <section class="panel">
+          <h2>Plot</h2>
+          <canvas id="chart" aria-label="Log history chart"></canvas>
+        </section>
+
+        <section class="panel">
+          <h2>Data</h2>
+          <div class="controls" style="margin-bottom: 12px;">
+            <button id="exportBtn">Export CSV</button>
+            <button id="importBtn">Import CSV</button>
+          </div>
+          <div class="subtle" style="margin-bottom:8px;">Commit log (click a row to select for delete)</div>
+          <div class="log-list">
+            <table class="log-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Value</th>
+                </tr>
+              </thead>
+              <tbody id="logBody"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+
+      <div class="right-column">
+        <section class="panel counter-wrap">
+          <h2>Counter</h2>
+          <div id="counterValue" class="counter">0</div>
+        </section>
+
+        <section class="panel">
+          <h2>Counter Controls</h2>
+          <div class="toolbar">
+            <button id="incrementBtn" class="primary">Increment</button>
+            <button id="decrementBtn">Decrement</button>
+            <button id="resetCounterBtn">Reset Counter</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Logging</h2>
+          <div class="logging-actions">
+            <div class="controls">
+              <button id="commitBtn" class="primary">Commit</button>
+              <button id="editBtn">Edit Entry</button>
+            </div>
+            <div class="controls">
+              <button id="deleteBtn" class="danger">Delete</button>
+              <button id="resetBtn" class="danger">Reset Log</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel status-panel">
+          <div id="status" class="status"></div>
+        </section>
+      </div>
     </section>
 
-    <section class="panel counter-wrap">
-      <div class="subtle">Current counter</div>
-      <div id="counterValue" class="counter">0</div>
-      <div class="toolbar">
-        <button id="incrementBtn" class="primary">Increment</button>
-        <button id="decrementBtn">Decrement</button>
-        <button id="commitBtn" class="primary">Commit</button>
-        <button id="editBtn">Edit Entry</button>
-        <button id="deleteBtn" class="danger">Delete</button>
-      </div>
-      <div class="controls">
-        <button id="exportBtn">Export CSV</button>
-        <button id="importBtn">Import CSV</button>
-        <button id="resetCounterBtn">Reset Counter</button>
-        <button id="resetBtn" class="danger">Reset Log</button>
-      </div>
-      <input id="csvInput" type="file" accept=".csv,text/csv" style="display:none" />
-      <div id="status" class="status"></div>
-    </section>
-
-    <section class="panel">
-      <div class="subtle" style="margin-bottom:8px;">Commit log (click a row to select for delete)</div>
-      <div class="log-list">
-        <table class="log-table">
-          <thead>
-            <tr>
-              <th>Timestamp</th>
-              <th>Value</th>
-            </tr>
-          </thead>
-          <tbody id="logBody"></tbody>
-        </table>
-      </div>
-    </section>
+    <input id="csvInput" type="file" accept=".csv,text/csv" style="display:none" />
   </main>
 
   <script>
