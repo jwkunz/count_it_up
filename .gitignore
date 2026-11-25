@@ -1,0 +1,20 @@
+.DS_Store
+*.swp
+.vscode/
+.idea/
+*.iml
+
+# Generated single-file bundles
+/web/count_it_up_v*.html
+
+# Android / Gradle
+/Android/.gradle/
+/Android/build/
+/Android/app/build/
+/Android/.cxx/
+/Android/captures/
+/Android/local.properties
+*.apk
+*.aab
+*.keystore
+*.jks

@@ -20,12 +20,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Build single-file app
-        run: |
-          ./package.sh
+        run: ./scripts/single_file_package.sh
+        working-directory: web
       - name: Assemble site
         run: |
           mkdir -p _site
-          cp dist/count_it_up_single_file.html _site/index.html
+          cp web/count_it_up_v*.html _site/index.html
       - uses: actions/upload-pages-artifact@v3
         with:
           path: _site

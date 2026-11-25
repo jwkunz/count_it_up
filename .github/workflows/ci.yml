@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    name: Version files agree
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check VERSION and (for a release) the tag
+        run: node scripts/version.mjs check "${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}"
+
+  web:
+    name: Single-file build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the single HTML file
+        run: ./scripts/single_file_package.sh
+        working-directory: web
+      - name: Check the build is one self-contained file
+        working-directory: web
+        run: |
+          test "$(ls count_it_up_v*.html | wc -l)" = 1
+          ! grep -E '<script[^>]+src=|<link[^>]+href=|src="Count_It_Up\.png"' count_it_up_v*.html
+      - run: cp web/count_it_up_v*.html "$RUNNER_TEMP/count_it_up.html"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: count-it-up-html
+          path: ${{ runner.temp }}/count_it_up.html
+          if-no-files-found: error
+
+  android:
+    name: Android debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Build APK (Gradle builds the web page the app bundles)
+        run: ./gradlew :app:assembleDebug --no-daemon
+        working-directory: Android
+      - run: cp Android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/count-it-up-debug.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: count-it-up-apk
+          path: ${{ runner.temp }}/count-it-up-debug.apk
+          if-no-files-found: error
+
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, web, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          mv artifacts/count_it_up.html "count-it-up-$TAG.html"
+          mv artifacts/count-it-up-debug.apk "count-it-up-$TAG-debug.apk"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Count It Up! $TAG" --generate-notes \
+            "count-it-up-$TAG.html#Count It Up! (single HTML file)" \
+            "count-it-up-$TAG-debug.apk#Count It Up! (Android debug APK)"
