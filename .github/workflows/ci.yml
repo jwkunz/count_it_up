@@ -43,7 +43,7 @@ jobs:
           if-no-files-found: error
 
   android:
-    name: Android debug APK
+    name: Android release APK
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,14 +52,32 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
+      - name: Load the release signing key
+        if: github.event_name != 'pull_request'
+        env:
+          KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          test -n "$KEYSTORE_BASE64"
+          echo "$KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.jks"
+          echo "RELEASE_STORE_FILE=$RUNNER_TEMP/release.jks" >> "$GITHUB_ENV"
       - name: Build APK (Gradle builds the web page the app bundles)
-        run: ./gradlew :app:assembleDebug --no-daemon
+        env:
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: ./gradlew :app:assembleRelease --no-daemon
         working-directory: Android
-      - run: cp Android/app/build/outputs/apk/debug/app-debug.apk "$RUNNER_TEMP/count-it-up-debug.apk"
+      - name: Collect the APK and check its signature
+        run: |
+          apk=$(ls Android/app/build/outputs/apk/release/app-release*.apk)
+          if [ "$GITHUB_EVENT_NAME" != pull_request ]; then
+            "$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/apksigner" verify --print-certs "$apk"
+          fi
+          cp "$apk" "$RUNNER_TEMP/count-it-up.apk"
       - uses: actions/upload-artifact@v4
         with:
           name: count-it-up-apk
-          path: ${{ runner.temp }}/count-it-up-debug.apk
+          path: ${{ runner.temp }}/count-it-up.apk
           if-no-files-found: error
 
   release:
@@ -80,7 +98,7 @@ jobs:
           TAG: ${{ github.ref_name }}
         run: |
           mv artifacts/count_it_up.html "count-it-up-$TAG.html"
-          mv artifacts/count-it-up-debug.apk "count-it-up-$TAG-debug.apk"
+          mv artifacts/count-it-up.apk "count-it-up-$TAG.apk"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "Count It Up! $TAG" --generate-notes \
             "count-it-up-$TAG.html#Count It Up! (single HTML file)" \
-            "count-it-up-$TAG-debug.apk#Count It Up! (Android debug APK)"
+            "count-it-up-$TAG.apk#Count It Up! (Android APK)"

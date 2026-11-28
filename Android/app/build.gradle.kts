@@ -19,7 +19,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.countitup_android"
+        applicationId = "com.jwkunz.countitup"
         minSdk = 24
         targetSdk = 36
         versionCode = androidVersionCode
@@ -28,8 +28,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    // Release signing comes from the environment (GitHub Actions secrets).
+    // Without it, release builds are left unsigned.
+    val releaseStoreFile = System.getenv("RELEASE_STORE_FILE")
+    signingConfigs {
+        if (!releaseStoreFile.isNullOrEmpty()) {
+            create("release") {
+                storeFile = file(releaseStoreFile)
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
         release {
+            signingConfig = signingConfigs.findByName("release")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

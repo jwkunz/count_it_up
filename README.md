@@ -9,7 +9,7 @@ Count It Up! is a simple dark-themed app for counting repeated events and tracki
 | Where | What |
 |-------|------|
 | **[jwkunz.github.io/count_it_up](https://jwkunz.github.io/count_it_up/)** | The web app, always the latest `main` (deployed by GitHub Pages) |
-| **[Releases](https://github.com/jwkunz/count_it_up/releases)** | `count-it-up-vX.Y.Z.html`, a single self-contained file you can save and open locally, and `count-it-up-vX.Y.Z-debug.apk`, the Android app |
+| **[Releases](https://github.com/jwkunz/count_it_up/releases)** | `count-it-up-vX.Y.Z.html`, a single self-contained file you can save and open locally, and `count-it-up-vX.Y.Z.apk`, the Android app |
 
 ## Features
 
@@ -70,11 +70,11 @@ cd Android
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Pass `-PskipWebBuild` to reuse an existing `web/count_it_up_v*.html`. The APK is a debug build; a Play Store upload would need a signed release build, which is not set up here.
+Pass `-PskipWebBuild` to reuse an existing `web/count_it_up_v*.html`. CI signs the release APK with the key in the repository's `RELEASE_*` secrets. A local `assembleRelease` without them produces an unsigned APK.
 
 ## Continuous integration
 
-- **`ci.yml`** runs on pushes to `main`, tags and pull requests: checks the version, builds the single HTML file (and verifies it has no external references), and builds the debug APK.
+- **`ci.yml`** runs on pushes to `main`, tags and pull requests: checks the version, builds the single HTML file (and verifies it has no external references), and builds the release APK.
 - **On a `v*` tag** it also publishes a GitHub release containing the HTML file and the APK.
 - **`pages.yml`** builds the single HTML file and deploys it to GitHub Pages on every push to `main`.
 
